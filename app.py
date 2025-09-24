@@ -77,7 +77,6 @@ st.markdown("""
 
 # Sidebar
 with st.sidebar:
-    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Gold_coin_geometric_shine.png/220px-Gold_coin_geometric_shine.png", width=150)
     st.title("ℹ️ About")
     st.markdown("""
     - **Model**: Custom LSTM Deep Learning  
