@@ -222,6 +222,6 @@ else:
 # Footer
 st.markdown("""
 <div style='text-align: center; margin-top: 50px; color: #888; font-size: 0.9em;'>
-    Built with ❤️ using PyTorch & Streamlit | Data: Kaggle Geopolitical Risk Index
+    Built with PyTorch & Streamlit | Data: Kaggle Geopolitical Risk Index
 </div>
 """, unsafe_allow_html=True)
