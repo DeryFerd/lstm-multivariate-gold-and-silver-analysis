@@ -7,6 +7,38 @@ import joblib
 from datetime import timedelta
 import plotly.graph_objects as go
 
+# === THEME TOGGLE SETUP ===
+if "theme" not in st.session_state:
+    st.session_state.theme = "dark"
+
+def toggle_theme():
+    st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+
+# Apply current theme
+if st.session_state.theme == "dark":
+    bg_color = "#0e1117"
+    text_color = "#fafafa"
+    plotly_text = "#fafafa"
+else:
+    bg_color = "#ffffff"
+    text_color = "#000000"
+    plotly_text = "#000000"
+
+st.markdown(f"""
+    <style>
+        .stApp {{
+            background-color: {bg_color};
+            color: {text_color};
+        }}
+        .js-plotly-plot .plotly .modebar-btn {{
+            color: {plotly_text} !important;
+        }}
+        [data-testid="stMetricValue"] {{
+            color: {text_color};
+        }}
+    </style>
+""", unsafe_allow_html=True)
+
 # ======================
 # 1. MODEL ARCHITECTURE
 # ======================
