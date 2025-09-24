@@ -7,6 +7,44 @@ import joblib
 from datetime import timedelta
 import plotly.graph_objects as go
 
+# Auto-adapt to user's system theme (light/dark)
+st.markdown("""
+    <script>
+        // Detect system theme and set CSS class
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        if (isDark) {
+            document.documentElement.classList.add('dark-mode');
+        } else {
+            document.documentElement.classList.add('light-mode');
+        }
+    </script>
+    <style>
+        /* Dark mode styles */
+        .dark-mode .stApp {
+            background-color: #0e1117 !important;
+            color: #fafafa !important;
+        }
+        .dark-mode .js-plotly-plot .plotly .modebar-btn {
+            color: #fafafa !important;
+        }
+        .dark-mode [data-testid="stMetricValue"] {
+            color: #fafafa !important;
+        }
+
+        /* Light mode styles (explicit for safety) */
+        .light-mode .stApp {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+        }
+        .light-mode .js-plotly-plot .plotly .modebar-btn {
+            color: #000000 !important;
+        }
+        .light-mode [data-testid="stMetricValue"] {
+            color: #000000 !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # ======================
 # 1. MODEL ARCHITECTURE
 # ======================
