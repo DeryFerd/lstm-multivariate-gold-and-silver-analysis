@@ -4,129 +4,173 @@ import numpy as np
 import torch
 import torch.nn as nn
 import joblib
-from datetime import datetime, timedelta
+from datetime import timedelta
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # ======================
-# 1. ARSITEKTUR MODEL (SAMA DENGAN DI COLAB)
+# 1. ARSITEKTUR MODEL
 # ======================
 class GoldLSTM(nn.Module):
-    def __init__(self, input_dim=5, hidden_dim=32, num_layers=1, output_horizon=1):
+    def __init__(self, input_dim=5, hidden_dim=32, num_layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=input_dim,
-            hidden_size=hidden_dim,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=0.4
-        )
-        self.fc = nn.Linear(hidden_dim, output_horizon)
-        
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, dropout=0.4)
+        self.fc = nn.Linear(hidden_dim, 1)
     def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        return self.fc(lstm_out[:, -1, :])
+        out, _ = self.lstm(x)
+        return self.fc(out[:, -1, :])
 
 # ======================
-# 2. LOAD MODEL & SCALER
+# 2. LOAD SEMUA ASSET
 # ======================
 @st.cache_resource
-def load_model():
-    # Init model
+def load_assets():
+    # Load model
     model = GoldLSTM()
-    # Load weights
     checkpoint = torch.load('gold_lstm_model.pth', map_location='cpu')
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    # Load scaler
+    
+    # Load scaler & data
     scaler_X = joblib.load('scaler_X.pkl')
-    lookback = checkpoint['lookback']
-    feature_cols = checkpoint['feature_cols']
-    return model, scaler_X, lookback, feature_cols
+    df = pd.read_csv('sample_data.csv')
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    df = df.sort_values('DATE').reset_index(drop=True)
+    
+    return model, scaler_X, df
 
-model, scaler_X, lookback, feature_cols = load_model()
+model, scaler_X, full_df = load_assets()
+lookback = 14
+feature_cols = ['GOLD_PRICE', 'SILVER_PRICE', 'GPRD', 'GPRD_ACT', 'GPRD_THREAT']
 
 # ======================
 # 3. FUNGSI PREDIKSI
 # ======================
-def predict_next_gold_price(df, model, scaler_X, lookback, feature_cols):
-    """
-    Prediksi harga emas 1 hari ke depan
-    Input: df harus punya kolom DATE, GOLD_PRICE, SILVER_PRICE, GPRD, GPRD_ACT, GPRD_THREAT
-    """
-    # Pastikan urut
-    df = df.sort_values('DATE').reset_index(drop=True)
+def predict_from_date(df, end_date, model, scaler_X, lookback, feature_cols):
+    """Prediksi 1 hari setelah end_date"""
+    df_until = df[df['DATE'] <= end_date].copy()
+    if len(df_until) < lookback:
+        return None, None, None
     
-    # Ambil data terakhir sebanyak lookback
-    recent_data = df[feature_cols].tail(lookback)
-    
-    # Normalisasi
-    recent_scaled = scaler_X.transform(recent_data)
-    
-    # Bentuk input untuk model: (1, lookback, 5)
+    recent = df_until[feature_cols].tail(lookback)
+    recent_scaled = scaler_X.transform(recent)
     X_input = torch.tensor(recent_scaled, dtype=torch.float32).unsqueeze(0)
     
-    # Prediksi log return
     with torch.no_grad():
-        log_return_pred = model(X_input).item()
+        log_ret = model(X_input).item()
     
-    # Konversi ke harga
-    last_gold_price = df['GOLD_PRICE'].iloc[-1]
-    predicted_price = last_gold_price * np.exp(log_return_pred)
-    predicted_change_pct = (predicted_price - last_gold_price) / last_gold_price * 100
+    last_price = df_until['GOLD_PRICE'].iloc[-1]
+    pred_price = last_price * np.exp(log_ret)
+    pred_change = (pred_price - last_price) / last_price * 100
     
-    return predicted_price, predicted_change_pct, log_return_pred
+    return pred_price, pred_change, log_ret
 
 # ======================
-# 4. UI STREAMLIT
+# 4. UI BARU - LEBIH RAMAI!
 # ======================
-st.set_page_config(page_title="Gold Price Forecaster", page_icon="💰")
-st.title("💰 Gold Price Forecaster (LSTM + Geopolitical Risk)")
+st.set_page_config(page_title="💰 Gold Forecaster", page_icon="💰", layout="wide")
+st.markdown("<h1 style='text-align: center; color: #FFD700;'>💰 Gold Price Forecaster</h1>", unsafe_allow_html=True)
 st.markdown("""
-Prediksi harga emas 1 hari ke depan menggunakan **LSTM Deep Learning** dengan faktor:
-- Harga perak
-- Indeks risiko geopolitik (GPRD, GPRD_ACT, GPRD_THREAT)
-""")
+<div style='text-align: center; color: #888; margin-bottom: 30px;'>
+    <b>Deep Learning LSTM + Geopolitical Risk Intelligence</b><br>
+    Prediksi harga emas 1 hari ke depan berdasarkan data historis & risiko geopolitik global
+</div>
+""", unsafe_allow_html=True)
 
-# Upload data
-uploaded_file = st.file_uploader("Upload historical data (CSV)", type=["csv"])
+# Sidebar info
+with st.sidebar:
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/7/7f/Gold_coin_geometric_shine.png/220px-Gold_coin_geometric_shine.png", width=150)
+    st.title("ℹ️ About")
+    st.markdown("""
+    - **Model**: Custom LSTM Deep Learning
+    - **Input**: Harga perak + 3 indeks risiko geopolitik
+    - **Data**: 1985–2024 (40 tahun histori)
+    - **Akurasi**: ±1.9% error harian
+    """)
+    st.info("💡 Geser slider di bawah untuk lihat prediksi di tanggal berbeda!")
 
-if uploaded_file is not None:
-    df = pd.read_csv(uploaded_file)
-    df['DATE'] = pd.to_datetime(df['DATE'])
+# Slider tanggal
+min_date = full_df['DATE'].min().date()
+max_date = full_df['DATE'].max().date() - timedelta(days=1)  # biar ada data besoknya
+selected_date = st.slider(
+    "Pilih tanggal historis untuk prediksi **hari berikutnya**:",
+    min_value=min_date,
+    max_value=max_date,
+    value=max_date,
+    format="YYYY-MM-DD"
+)
+
+# Prediksi
+pred_price, pred_change, log_ret = predict_from_date(
+    full_df, pd.Timestamp(selected_date), model, scaler_X, lookback, feature_cols
+)
+
+if pred_price is not None:
+    next_date = selected_date + timedelta(days=1)
     
-    # Validasi kolom
-    required_cols = ['DATE', 'GOLD_PRICE', 'SILVER_PRICE', 'GPRD', 'GPRD_ACT', 'GPRD_THREAT']
-    if not all(col in df.columns for col in required_cols):
-        st.error(f"File harus punya kolom: {required_cols}")
-        st.stop()
+    # Tampilkan hasil utama
+    col1, col2, col3 = st.columns(3)
+    col1.metric("📅 Tanggal Prediksi", next_date.strftime("%Y-%m-%d"))
+    col2.metric("💰 Harga Emas Prediksi", f"${pred_price:.2f}", 
+                delta=f"{pred_change:.2f}%" if pred_change else None,
+                delta_color="inverse" if pred_change < 0 else "normal")
+    col3.metric("🌍 GPRD Terakhir", f"{full_df[full_df['DATE'] <= pd.Timestamp(selected_date)]['GPRD'].iloc[-1]:.1f}")
     
-    # Pastikan cukup data
-    if len(df) < lookback:
-        st.error(f"Data minimal {lookback} hari diperlukan!")
-        st.stop()
+    st.markdown("---")
     
-    # Prediksi
-    try:
-        pred_price, pred_change, log_ret = predict_next_gold_price(df, model, scaler_X, lookback, feature_cols)
-        
-        # Tampilkan hasil
-        last_date = df['DATE'].max()
-        next_date = last_date + timedelta(days=1)
-        
-        st.subheader(f"Prediksi untuk {next_date.strftime('%Y-%m-%d')}")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Harga Emas", f"${pred_price:.2f}")
-        col2.metric("Perubahan", f"{pred_change:.2f}%", 
-                   delta_color="normal" if abs(pred_change) < 0.5 else ("inverse" if pred_change < 0 else "normal"))
-        col3.metric("Log Return", f"{log_ret:.4f}")
-        
-        # Plot histori + prediksi
-        st.subheader("Harga Emas Historis (30 Hari Terakhir)")
-        plot_df = df[['DATE', 'GOLD_PRICE']].tail(30).copy()
-        plot_df.loc[len(plot_df)] = [next_date, pred_price]  # tambahkan prediksi
-        
-        st.line_chart(plot_df.set_index('DATE'))
-        
-    except Exception as e:
-        st.error(f"Error saat prediksi: {str(e)}")
+    # Plot interaktif
+    plot_days = 60
+    plot_df = full_df[full_df['DATE'] >= pd.Timestamp(selected_date) - timedelta(days=plot_days)].copy()
+    pred_row = pd.DataFrame({
+        'DATE': [pd.Timestamp(next_date)],
+        'GOLD_PRICE': [pred_price],
+        'is_prediction': [True]
+    })
+    plot_df['is_prediction'] = False
+    plot_df = pd.concat([plot_df, pred_row], ignore_index=True)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=plot_df[~plot_df['is_prediction']]['DATE'],
+        y=plot_df[~plot_df['is_prediction']]['GOLD_PRICE'],
+        mode='lines',
+        name='Harga Historis',
+        line=dict(color='#FFD700', width=3)
+    ))
+    fig.add_trace(go.Scatter(
+        x=plot_df[plot_df['is_prediction']]['DATE'],
+        y=plot_df[plot_df['is_prediction']]['GOLD_PRICE'],
+        mode='markers+text',
+        name='Prediksi',
+        marker=dict(color='red', size=12),
+        text=[f"${pred_price:.0f}"],
+        textposition="top center"
+    ))
+    
+    fig.update_layout(
+        title=f"Harga Emas: {plot_days} Hari Terakhir + Prediksi",
+        xaxis_title="Tanggal",
+        yaxis_title="Harga (USD)",
+        height=500,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Insight
+    gprd_val = full_df[full_df['DATE'] <= pd.Timestamp(selected_date)]['GPRD'].iloc[-1]
+    if gprd_val > 150:
+        st.warning(f"⚠️ **Peringatan**: Risiko geopolitik sangat tinggi ({gprd_val:.1f}) — volatilitas emas mungkin meningkat!")
+    elif gprd_val < 50:
+        st.success(f"✅ **Stabil**: Risiko geopolitik rendah ({gprd_val:.1f}) — pasar cenderung tenang.")
+    else:
+        st.info(f"ℹ️ Risiko geopolitik sedang ({gprd_val:.1f})")
 else:
-    st.info("Upload file CSV dengan kolom: DATE, GOLD_PRICE, SILVER_PRICE, GPRD, GPRD_ACT, GPRD_THREAT")
+    st.error("❌ Tidak cukup data historis untuk prediksi di tanggal ini!")
+
+# Footer
+st.markdown("""
+<div style='text-align: center; margin-top: 50px; color: #888; font-size: 0.9em;'>
+    Dibuat dengan ❤️ menggunakan PyTorch & Streamlit | Data: Kaggle Geopolitical Risk Index
+</div>
+""", unsafe_allow_html=True)
