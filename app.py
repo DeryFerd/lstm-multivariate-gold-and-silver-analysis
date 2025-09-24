@@ -15,7 +15,7 @@ def toggle_theme():
     st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
 
 # Apply current theme
-if st.session_state.theme == "dark":
+if st.session_state.theme == "light":
     bg_color = "#0e1117"
     text_color = "#fafafa"
     plotly_text = "#fafafa"
